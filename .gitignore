@@ -42,3 +42,4 @@ gradio_cached_examples/
 #other
 .ruff_cache/
 其它（old）/
+config.yml

@@ -5,7 +5,7 @@
 ======================  ==================================================
 格式                     解析方式
 ======================  ==================================================
-``.pdf``                PyMuPDF 逐页抽正文（**不需要 GPU/OCR**）
+``.pdf``                PyMuPDF 逐页抽正文；抽不到的页按 ocr.enabled 决定是否走 DotsOCR
 ``.txt`` / ``.md``      直接读取
 ``.json``               读成紧凑文本（对象键值对展开）
 ``.csv``                csv 模块逐行转成"表头: 值"的可读行
@@ -13,9 +13,12 @@
 ``.png/.jpg/.jpeg/…``   多模态模型生成描述，图片与描述一起向量化
 ======================  ==================================================
 
-关于扫描件：仓库里 DotsOCR 的权重不存在、也没有起 vLLM 服务，
-所以**扫描件 PDF 抽不到文字**。这种情况不静默吞掉，而是明确回报
-"该文件可能是扫描件/图片型 PDF，需要先做 OCR"，让用户知道为什么没入库。
+关于扫描件：**逐页判断，PDF 自带的文字层优先**（原文照搬、最快、不占显存），
+只有抽不到文字的页才看 ``config.yml → ocr.enabled``：
+
+- ``true``  —— 该页用 PyMuPDF 渲染成图交给 DotsOCR 识别，结果与文字层无缝拼进正文；
+- ``false`` —— 纯 PyMuPDF，这些页被跳过；若整份文件都没文字层，会明确回报
+  "很可能是扫描件或纯图片型 PDF"，**不静默吞掉、也不假装成功**。
 
 与命令行脚本的关系：原先要跑 ``python main.py`` / ``start_knowledge.ps1``
 才能把文档入库，现在页面上传即可。两条链路最终都写进同一个集合
@@ -124,36 +127,70 @@ def validate_upload(filename: str, size_bytes: int) -> Optional[str]:
 
 
 def _parse_pdf(path: Path) -> ParseResult:
-    """PyMuPDF 逐页抽正文。扫描件会抽不到文字，这里如实回报。"""
-    import pymupdf
+    """逐页取正文：文字层优先，抽不到的页按 ``ocr.enabled`` 决定是否交给 DotsOCR。"""
+    from utils.ocr_utils import ocr_enabled, ocr_pdf_pages, pymupdf_pdf_pages
 
     max_pages = int(CONFIG.get("attachment.pdf_max_pages", 200))
     min_chars = int(CONFIG.get("attachment.pdf_min_chars_per_page", 20))
 
     result = ParseResult()
-    pieces: List[str] = []
-    empty_pages = 0
 
-    with pymupdf.open(str(path)) as doc:
-        total = doc.page_count
-        pages = min(total, max_pages)
-        if total > max_pages:
-            result.notes.append(f"文档共 {total} 页，只解析前 {max_pages} 页")
-        for index in range(pages):
-            text = (doc.load_page(index).get_text("text") or "").strip()
-            if len(text) < min_chars:
-                empty_pages += 1
-                continue
+    # ① 先用 PyMuPDF 读 PDF 自带的文字层：原文照搬，最准也最快，不需要任何模型
+    total, text_pages = pymupdf_pdf_pages(path, max_pages=max_pages, min_chars=min_chars)
+    pages = min(total, max_pages)
+    if total > max_pages:
+        result.notes.append(f"文档共 {total} 页，只解析前 {max_pages} 页")
+
+    # ② 只有"没有文字层"的页才考虑 OCR（扫描页 / 图片型页）
+    blank_pages = [index for index in range(pages) if index not in text_pages]
+    ocr_pages: Dict[int, str] = {}
+    ocr_error = ""
+    if blank_pages and ocr_enabled():
+        try:
+            ocr_pages = ocr_pdf_pages(path, pages=blank_pages, tag=path.stem[:80])
+        except Exception as e:  # noqa: BLE001  服务不可用不该让整次上传失败
+            ocr_error = str(e)
+            log.warning(f"[attachment] OCR 已启用但不可用，这些页按无文字处理：{e}")
+    elif blank_pages:
+        result.notes.append(f"{len(blank_pages)} 页没有文字层（可能是图片/扫描页），"
+                            f"OCR 未启用（config.yml → ocr.enabled=false），已跳过")
+
+    # ③ 合并：文字层的页在前，OCR 的结果补进原本空白的页
+    pieces: List[str] = []
+    from_ocr = 0
+    for index in range(pages):
+        text = (text_pages.get(index) or "").strip()
+        if not text:
+            text = (ocr_pages.get(index) or "").strip()
+            if text:
+                from_ocr += 1
+        if text:
             pieces.append(f"【第 {index + 1} 页】\n{text}")
 
     result.text = "\n\n".join(pieces)
-    if empty_pages:
-        result.notes.append(f"{empty_pages} 页几乎没有文字（可能是图片/扫描页），已跳过")
+    if from_ocr:
+        result.notes.append(f"{from_ocr} 页由 OCR（DotsOCR）识别")
+
+    still_blank = [index for index in range(pages)
+                   if index not in text_pages and not (ocr_pages.get(index) or "").strip()]
+    # OCR 关着的时候上面那条 note 已经解释过这些页了，不重复刷一遍
+    if still_blank and ocr_enabled():
+        result.notes.append(f"仍有 {len(still_blank)} 页没取到内容，已跳过")
+
     if not result.text.strip():
         result.ok = False
-        result.error = ("没能从这份 PDF 里提取到文字，它很可能是扫描件或纯图片型 PDF。"
-                        "当前环境的 OCR（DotsOCR）未部署，请改用可复制文字的 PDF，"
-                        "或先把扫描页转成图片再上传。")
+        if ocr_error:
+            result.error = ("没能从这份 PDF 里提取到文字。它很可能是扫描件，"
+                            f"OCR 虽已启用（ocr.enabled=true）但这次没跑起来：{ocr_error}")
+        elif not ocr_enabled():
+            result.error = ("没能从这份 PDF 里提取到文字，它很可能是扫描件或纯图片型 PDF，"
+                            "而 OCR 当前未启用（config.yml → ocr.enabled=false）。两个办法："
+                            "① 配好 DotsOCR 权重后把 ocr.enabled 改成 true；"
+                            "② 把扫描页导出成图片再上传（图片走多模态描述，不需要 OCR）。")
+        else:
+            result.error = ("没能从这份 PDF 里提取到文字。它很可能是扫描件，"
+                            "OCR 已启用但没能识别出内容，"
+                            "可在 output/ocr_pages/ 下查看渲染出的页面图与模型输出。")
     return result
 
 

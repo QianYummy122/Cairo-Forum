@@ -1,7 +1,6 @@
 # 小罗Bot · 开罗论坛的 AI 搜索引擎 Agent
 
-> 本项目由原「MultimodalRAG 多模态知识库问答系统」改造而来。
-> 改造后它是**开罗论坛内置的 AI 搜索引擎 Agent**：多智能体协作 + 多模态 RAG，
+> 本项目是**开罗论坛内置的 AI 搜索引擎 Agent**：多智能体协作 + 多模态 RAG，
 > 先在论坛里找答案，论坛里没有（且用户允许）时再联网找。
 
 它是论坛整体架构里的一环：
@@ -95,7 +94,7 @@ python -m venv .venv
 
 ### 2.3 改配置
 
-所有配置都在 `config.yml`（唯一配置源，代码不读环境变量）：
+所有配置都在 `config.yml`（唯一配置源，代码不读环境变量；示例文件为`config_example.yml`）：
 
 ```yaml
 llm:
@@ -107,6 +106,11 @@ llm:
 forum:
   base_url: "http://127.0.0.1:7010/api"   # springboot 网关
   mysql:    { user: "root", password: "..." }   # 兜底数据源
+
+ocr:
+  enabled: false             # ★ OCR 总开关：配好 DotsOCR 权重/vLLM 之后才改成 true
+  use_hf:  true              # true=本地权重（hf_model_path），false=远程 vLLM
+  hf_model_path: "weights/DotsOCR"
 
 server: { host: "127.0.0.1", port: 7861 }  # AI 服务监听地址
 ```
@@ -126,6 +130,7 @@ server: { host: "127.0.0.1", port: 7861 }  # AI 服务监听地址
 ```powershell
 # ① AI 服务（本服务）
 .\start_bot.ps1
+或者启动server文件夹下的app.py（FastAPI后台）
 
 # ② 论坛后端（另开终端；需要 ZooKeeper + MySQL + Redis）
 #    在 springboot/ 目录下启动 bbs-rest（:7010）
@@ -172,10 +177,10 @@ python tools\dev_gateway.py      # 监听 7010，前端配置不用改
 | GET | `/api/bbs/ai/sessions` | 会话列表 |
 | GET | `/api/bbs/ai/about` | 能力说明（页面侧栏用），附带 `currentUserIsAdmin` |
 
-### 3.1.1 上传文档附件（在页面上加知识，不用再跑脚本）
+### 3.1.1 上传文档附件
 
-原先往知识库加文档得去服务器上执行 `python main.py` 或 `.\start_knowledge.ps1`。
-现在管理员在小罗Bot 页面的「知识库」面板里直接拖拽上传即可：
+去服务器上执行 `python main.py` 或 `.\start_knowledge.ps1`。
+或者成为管理员在小罗Bot 页面的「知识库」面板里直接拖拽上传即可：
 
 ```
 页面拖拽文件 → /api/bbs/ai/kb/upload（multipart）
@@ -185,7 +190,7 @@ python tools\dev_gateway.py      # 监听 7010，前端配置不用改
 
 | 格式 | 解析方式 | 依赖 |
 |------|----------|------|
-| `.pdf` | PyMuPDF 逐页抽正文（**不需要 GPU / OCR**） | 已有 |
+| `.pdf` | PyMuPDF 抽文字层；抽不到的页在 `ocr.enabled=true` 时交给 DotsOCR | 已有 |
 | `.txt` / `.md` | 直接读取 | 无 |
 | `.json` | 展开成 `key.path: value` 便于按字段名检索 | 无 |
 | `.csv` | 逐行转成「列名: 值」；只取前 `csv_max_rows` 行 | 无 |
@@ -194,9 +199,10 @@ python tools\dev_gateway.py      # 监听 7010，前端配置不用改
 
 要点：
 
-- **扫描件 PDF 会明确报错**，不会静默入库。仓库里 DotsOCR 的权重不存在、
-  也没起 vLLM，所以抽不到文字时会返回
-  「很可能是扫描件或纯图片型 PDF，当前环境的 OCR 未部署」。
+- **扫描件走不走 OCR，取决于 `config.yml → ocr.enabled`**（详见「3.1.3」）：
+  关闭时这些页被跳过，整份文件都没有文字层就明确返回
+  「很可能是扫描件或纯图片型 PDF，而 OCR 当前未启用」——**不静默入库、也不假装成功**；
+  开启后这些页会用 PyMuPDF 渲染成图交给 DotsOCR 识别，结果与文字层拼进同一份正文。
 - **同一个文件重复上传不会重复入库**：主键是内容摘要（`attachment:<sha1前16位>`），
   重复上传是覆盖。
 - **上传者会记进知识条目的 `author` 字段**，便于溯源；列表里可以按附件删除
@@ -234,6 +240,41 @@ python tools\dev_gateway.py      # 监听 7010，前端配置不用改
 `attachment.admin_only: false` 可以把上传放开给所有登录用户，
 但要同时改前端 `BotChat.vue` 的上传区 `v-if` 与网关的 `ADMIN_ONLY_PATHS`。
 
+### 3.1.3 扫描件与 OCR 总开关（`ocr.enabled`）
+
+一份 PDF 能不能抽到字，取决于它**有没有文字层**：文字型 PDF 直接读文字层就行，
+扫描件/纯图片型 PDF 只有像素，必须靠 OCR 识别。这两件事由
+`config.yml → ocr.enabled` 一个开关统管，它代表**"你有没有把 OCR 配好"**：
+
+| `ocr.enabled` | 解析引擎 | 扫描件 | 需要准备什么 |
+|---------------|----------|--------|--------------|
+| `false`（默认） | 纯 PyMuPDF | ❌ 明确报错，不静默入库 | 什么都不用配，不占显存 |
+| `true` | PyMuPDF + DotsOCR | ✅ 渲染成图交给 DotsOCR 识别 | 权重放好，或 vLLM 起好 |
+
+两条解析入口都听这个开关：
+
+| 入口 | `false` 时 | `true` 时 |
+|------|-----------|-----------|
+| 页面「知识库」面板上传 | PyMuPDF 抽文字层，没有文字层的页跳过并说明原因 | 这些页走 DotsOCR，结果与文字层拼进同一份正文 |
+| `.\start_knowledge.ps1`（Gradio） | PyMuPDF 抽文字层，生成同构的 `<文件名>_page_N.md` | 整份文档走 DotsOCR |
+
+**是逐页判断，不是二选一**：能抽到文字层的页一律用 PyMuPDF（原文照搬、最快、
+不占显存），只有抽不到文字的页才交给 OCR —— 所以开不开 OCR，文字型 PDF 的解析
+结果完全一样。
+
+开 `true` 之前请确认：
+
+1. `ocr.use_hf: true` 时，权重放到 `ocr.hf_model_path`（默认 `weights/DotsOCR`）——
+   仓库自带下载脚本 `tools/download_model.py`（默认拉 `rednote-hilab/dots.ocr`，
+   加 `-t modelscope` 可走 ModelScope），下载目标正好是这个目录；
+   再按 `requirements.txt` 里被注释掉的那三行装上 `transformers` / `torch` /
+   `qwen-vl-utils`。`ocr.use_hf: false` 时，vLLM 要起在 `ocr.ip:ocr.port`
+   （默认 `localhost:6006`），且 `--served-model-name` 与 `ocr.model_name` 一致。
+2. **配错了不会把上传搞崩**：OCR 起不来时该页按"无文字"处理，接口会返回具体原因；
+   渲染出的页面图与模型原始输出留在 `output/ocr_pages/` 下，便于排查。
+3. HF 模式下权重只加载一次并常驻显存，`ocr.num_thread` 被强制为 1；
+   想让整份文档并行解析，得用 vLLM 模式再调大 `ocr.num_thread`。
+
 ### 3.2 SSE 事件协议
 
 前端按事件名分别处理：`agent`/`plan` 渲染"智能体协作过程"，
@@ -266,7 +307,7 @@ event: end       {}
 ```
 论坛内容（文章 / 评论 / 资源 / 标签）        PDF 文档
         │                                      │
-        │  ingestion/forum_source.py           │  dots_ocr/（DotsOCR 解析）
+        │  ingestion/forum_source.py           │  ocr.enabled ? DotsOCR : PyMuPDF
         │  REST 网关 → MySQL → 本地快照         │  splitters/（四层分块）
         ▼                                      ▼
    统一数据结构 ForumDocument ────────────────┘
@@ -316,12 +357,19 @@ event: end       {}
 ```
 MultimodalRAG/
 ├── config.yml                    ★ 唯一配置源（API Key / 端口 / 检索参数 / 开关）
+├── config_example.yml            脱敏配置模板（api_key 全为空，复制改名为 config.yml 再用）
 ├── requirements.txt
 ├── README.md                     本文档
+├── my_llm.py                     全局大模型实例（对话 / 多模态 / 嵌入 / 智谱客户端）
 ├── start_bot.ps1                 ★ 启动 AI 服务（FastAPI）
 ├── start_kb_sync.ps1             ★ 同步论坛内容到知识库
 ├── start_chat.ps1                启动 Gradio 调试界面
-├── start_knowledge.ps1           启动 PDF 知识库构建界面
+├── start_knowledge.ps1           启动 PDF 知识库构建界面（实为拉起 main.py）
+├── main.py                       ★ 文档知识库构建入口（Gradio，受 ocr.enabled 控制）
+├── save_existing.py              把已有的 MD 目录直接入库
+├── check_milvus.py               查看知识库数据（需先停 AI 服务，Milvus Lite 独占锁）
+├── clear_milvus.py               清空向量库
+├── evaluate_full.py              离线 RAG 评估
 │
 ├── agent/                        ★ 多智能体核心
 │   ├── graph.py                    多智能体图装配（Supervisor 模式 + prepare 清场）
@@ -348,23 +396,34 @@ MultimodalRAG/
 │   ├── attachment_ingest.py        ★ 页面上传的文档附件：PDF/txt/md/json/csv/docx/图片
 │   └── cli.py                      python -m ingestion.cli sync|status|sync-pdf
 │
-├── utils/image_utils.py          图片理解（不依赖向量库，可单独复用）
+├── utils/                        配置、嵌入、日志、图片理解、★ OCR 开关
+│   ├── config.py                   唯一配置源读取（不读环境变量 / .env）
+│   ├── embeddings_utils.py         DashScope 多模态嵌入 + 限流 / 429 重试
+│   ├── image_utils.py              图片理解（不依赖向量库，可单独复用）
+│   ├── ocr_utils.py                ★ OCR 总开关 + 两条解析引擎（PyMuPDF / DotsOCR）
+│   ├── common_utils.py             MD 文件排序 / 目录清理等通用工具
+│   └── log_utils.py                日志
 │
 ├── milvus_db/
 │   ├── collections_operator.py     集合定义（统一知识库 / 长期记忆 / 旧版 PDF 库）
 │   └── forum_retriever.py          多模态混合检索器 + 长期记忆检索器
 │
-├── tools/dev_gateway.py          本地联调网关桩（模拟 bbs-rest）
+├── tools/
+│   ├── dev_gateway.py              本地联调网关桩（模拟 bbs-rest）
+│   └── download_model.py           下载 DotsOCR 权重到 weights/DotsOCR
 │
-├── dots_ocr/                     PDF/图片解析（DotsOCR，沿用原项目）
+├── dots_ocr/                     PDF/图片解析（DotsOCR，沿用原项目；受 ocr.enabled 控制）
 ├── splitters/splitter_md.py      Markdown 四层分块器（沿用原项目）
 ├── evaluate/                     RAGAS 评估器封装
-├── graph/                        共享 LangGraph 组件（长期记忆写入、调试打印）
-├── utils/                        配置、嵌入、日志、通用工具
-├── output/                       PDF 解析产物（含图片）
-├── forum_snapshot/               离线数据源目录（放 md/txt/json）
+├── graph/                        共享 LangGraph 组件（长期记忆写入、调试打印、流程图）
+├── gradio/                       （预留目录，当前为空）
+├── weights/DotsOCR               本地 OCR 权重（当前为空；用 tools/download_model.py 拉取）
+├── output/                       解析产物（attachments/ 上传原件、images/、ocr_pages/ OCR 中间产物）
+├── logs/                         运行日志（app.log）
+├── forum_snapshot/               离线数据源目录（**按需自建**，目录不存在时该数据源自动跳过）
 ├── milvus_local.db               Milvus Lite 数据文件
-└── 项目文档/                      设计与架构文档
+└── 其它（old）/                   改造前的旧文档与架构图（小罗Bot-架构与设计.md、面试项目文档.md、
+                                   graph_rag.png、存储流程图.png 等，当前流程已不引用）
 ```
 
 ### 相比改造前的删减
@@ -390,6 +449,7 @@ MultimodalRAG/
 | 查看数据源与知识库状态 | `.\start_kb_sync.ps1 -Status` |
 | **加文档到知识库** | **在页面「知识库」面板里直接拖拽上传（管理员）** |
 | 批量导入 PDF 文档（命令行，仍可用） | `.\start_knowledge.ps1` → 上传 → 存入知识库 |
+| 下载 DotsOCR 权重（启用 OCR 前） | `python tools\download_model.py`（加 `-t modelscope` 走 ModelScope） |
 | 已有 MD 直接入库 | `python save_existing.py <output子目录名>` |
 | 命令行问答 | `python -m agent.cli "论坛里有哪些标签？" --web` |
 | 交互式多轮问答 | `python -m agent.cli -i` |
@@ -480,10 +540,27 @@ A：不是，是有意为之。这三样只对管理员开放（判定见「3.1 
 `document.cookie='devRole=admin;path=/'` 再刷新即可。
 
 **Q：我上传了 PDF，但提示"抽不到文字"？**
-A：那份 PDF 是扫描件/纯图片型。当前环境没有部署 OCR（DotsOCR 权重不存在、
-也没起 vLLM），只能处理可复制文字的 PDF。两个办法：换成文本型 PDF，
-或者把扫描页导出成图片（png/jpg）再上传——图片会走多模态描述入库。
+A：那份 PDF 没有文字层（扫描件/纯图片型），而 `config.yml → ocr.enabled` 是 `false`，
+纯 PyMuPDF 自然读不到内容。三个办法：
+① **启用 OCR**：配好 DotsOCR 权重（或起好 vLLM）后把 `ocr.enabled` 改成 `true`，
+扫描页会被渲染成图交给 DotsOCR 识别，详见「3.1.3」；
+② **绕开 OCR**：把扫描页导出成图片（png/jpg）再上传——图片走多模态描述入库；
+③ 换成可复制文字的 PDF。
 解析器**不会假装成功**，这种情况会明确告诉你原因。
+
+**Q：`start_knowledge.ps1` 里点"解析文件"失败？**
+A：Gradio 那条链路完全看 `ocr.enabled`：
+`false` 时用的是纯 PyMuPDF，**扫描件会被拒绝**（提示会写明原因），图片文件也会被拒绝
+（PyMuPDF 读不了独立图片，请改用页面「知识库」面板上传）；
+`true` 时用的是 DotsOCR，权重没放好或 vLLM 没起就会失败，界面上会直接显示原始错误，
+同时提示你检查 `ocr.hf_model_path` 或 `ocr.ip:ocr.port`。
+界面顶部会显示当前实际生效的引擎，不用猜。
+
+**Q：开了 OCR 之后，文字型 PDF 的解析结果会变吗？**
+A：不会。解析是**逐页判断**的：能抽到文字层的页一律走 PyMuPDF（原文照搬），
+只有抽不到文字的页才走 DotsOCR（见「3.1.3」）。
+反过来，如果你发现某页明显该走 OCR 却没走，多半是那一页有少量文字（页眉/水印）达到了
+`attachment.pdf_min_chars_per_page`（默认 20 字）的门槛，可以把该值调大一点。
 
 **Q：页面上传文档报"只有管理员可以上传文档到知识库"？**
 A：附件入库是往**大家共用的**向量库写内容，所以默认只对管理员开放
@@ -515,6 +592,7 @@ A：权限规则有三处实现，必须同时改：
 | `llm.zhipu` | 联网搜索 Key | 联网搜索智能体 |
 | `forum` | `base_url` / `endpoints` / `mysql` / `chunk_size` | 论坛数据接入 |
 | `attachment` | `admin_only` / `max_size_mb` / `allowed_extensions` / `pdf_max_pages` / `csv_max_rows` | 文档附件上传入库 |
+| `ocr` | `enabled`（★ 总开关，配好 OCR 才改 `true`）/ `use_hf` / `hf_model_path` / `ip` / `port` / `dpi` / `num_thread` | 扫描件 OCR（DotsOCR）；关闭时纯 PyMuPDF |
 | `web_search` | `enabled_by_default` / `max_results` | 联网搜索行为 |
 | `agent` | `max_handoffs` / `forum_relevance_threshold` / `answer_score_threshold` / `enable_evaluator` / `memory_*` | 多智能体调度 |
 | `milvus` | `knowledge_collection` / `context_collection` / `dim` | 向量库 |

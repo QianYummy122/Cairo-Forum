@@ -1,7 +1,7 @@
 # 开罗论坛（Cairo Forum）· 项目文档
 
 > 版本：1.0　|　文档性质：全栈项目说明（架构 / 接口 / 数据库 / 部署 / 维护）
-> 项目根目录：`C:\Users\DELL\Desktop\Cairo Forum`
+> 项目根目录：`C:\Users\DELL\Desktop\Cairo-Forum`
 
 ---
 
@@ -46,7 +46,7 @@
 | 目录 | 类型 | 说明 |
 |------|------|------|
 | `springboot/` | Java 后端 | Maven 多模块，4 个可部署进程（REST 网关 + 3 个微服务） |
-| `vue-ui/` | Web 前端 | Vue 2 单页应用，73 个 Vue 组件，11 个 API 服务模块 |
+| `vue-ui/` | Web 前端 | Vue 2 单页应用，73 个 `.vue`（72 个业务组件 + `App.vue`），11 个 API 服务模块 |
 | `MultimodalRAG/` | Python AI 服务 | 「小罗Bot」，多智能体 + 多模态 RAG，经网关反向代理接入 |
 
 ### 1.3 谁在什么端口上
@@ -128,7 +128,7 @@ AI 问答是这条链路上的一个**旁路分支**：
 | API 文档 | Knife4j (`knife4j-openapi3-jakarta-spring-boot-starter`) | 4.5.0 |
 | API 文档 | `springdoc-openapi-starter-webmvc-ui` | 2.8.0（强制覆盖 Knife4j 内置旧版） |
 | HTTP 客户端 | Apache HttpClient5 | 5.4.2 |
-| 云存储 | 七牛云 `qiniu-java-sdk` | 7.6.0（已本地化，实际未启用） |
+| 云存储 | 七牛云 `qiniu-java-sdk` | 7.6.0（暂时考虑本地化，实际未启用） |
 | 邮件 | `spring-boot-starter-mail` | 3.5.11 |
 | 短信 | 阿里云 `aliyun-java-sdk-core` / `dysmsapi` | 4.5.20 / 2.1.0 |
 | 第三方公共库 | `io.github.maliangnansheng:nansheng-common` | 3.5.11-open-1.1.0 |
@@ -175,6 +175,10 @@ AI 问答是这条链路上的一个**旁路分支**：
 `pymilvus==2.6.0`（Milvus Lite）、`dashscope`、`gradio`、`loguru`、`pillow`、
 `PyMuPDF`、`sentence_transformers`、`ragas`。
 另有 `python-docx`（`.docx` 解析，可选）。
+
+> **OCR 相关依赖是可选的**：`transformers` / `torch` / `qwen-vl-utils` 在 `requirements.txt`
+> 里被**注释掉**，只有把 `config.yml → ocr.enabled` 改成 `true`（即已配好 DotsOCR 权重）
+> 才需要装上；`ocr.enabled: false`（默认）时走纯 PyMuPDF，不 import 任何模型依赖。
 
 ### 2.4 运行环境
 
@@ -378,7 +382,7 @@ springboot/
 │       ├── config/ai/AiAgentProperties.java
 │       ├── config/login/NoNeedLogin.java
 │       ├── config/swagger/{ApiVersion, ApiVersionConstant, SwaggerConfig}.java
-│       ├── controller/         ← 11 个 Controller，见第六章
+│       ├── controller/         ← 10 个 Controller，见第六章
 │       ├── controller/ai/{AiAgentClient.java, dto/AiChatDTO.java}
 │       ├── init/ApiDataInit.java
 │       ├── interceptor/        ← 6 个拦截器 + 全局异常处理
@@ -387,7 +391,7 @@ springboot/
 ├── bbs-user/                   【用户域】57 个 Java 文件
 │   ├── bbs-user-facade/        ← 5 个 Dubbo 接口 + 11 个 DTO
 │   ├── bbs-user-persistence/   ← 5 个 entity（+5 个 Example）+ 7 个 Mapper
-│   └── bbs-user-service/       ← 5 个 impl + 6 个 MapStruct + 7 个 config + 2 个定时任务
+│   └── bbs-user-service/       ← 5 个 impl + 6 个 MapStruct + 8 个 config + 2 个定时任务
 │
 ├── bbs-article/                【文章域】64 个 Java 文件
 │   ├── bbs-article-facade/     ← 6 个 Dubbo 接口 + 15 个 DTO
@@ -534,7 +538,7 @@ Mapper 接口（7 个）：`DynamicPoMapper`、`FollowPoMapper`、`LikePoMapper`
 
 MapStruct 转换器（6 个）：`CommonMS`、`DynamicMS`、`FollowMS`、`LikeMS`、`LikeCommentMS`、`UserLevelMS`。
 
-配置类（7 个）：`CommonConfig`、`DruidConfig`、`DubboConfig`、`MongoConfig`、
+配置类（8 个）：`CommonConfig`、`DruidConfig`、`DubboConfig`、`MongoConfig`、
 `MybatisConfig`、`RedisConfig`、`RedissonConfig`、`TaskThreadPoolConfig`。
 
 **定时任务（`scheduler/`）**：
@@ -602,7 +606,7 @@ MapStruct（7 个）：`ArticleMS`、`CommentMS`、`LabelMS`、`ArticleLabelMS`�
 （原工程配置指向作者服务器 ZK `47.109.0.224:2181`、Redis `8.137.106.178:6222`，
 若继续连作者 ZK，会与作者仍在运行的 ns-manage Provider 发生**服务发现冲突**。）
 
-#### 提供的 7 个 Dubbo 服务
+#### 提供的 8 个 Dubbo 服务（7 个实现第三方契约 + 1 个自有公共契约）
 
 | 实现类 | 实现的第三方接口（`com.liang.manage.auth.facade.server.*`） | 职责 |
 |--------|---------------------------------------------------|------|
@@ -952,7 +956,7 @@ SSE 事件回传：meta → plan → agent* → sources* → delta* → done →
 > ② `MultimodalRAG/tools/dev_gateway.py` 的 `ADMIN_ONLY_PATHS` / `ADMIN_ONLY_PREFIXES` / `SANITIZE_FOR_GUEST`；
 > ③ 前端 `BotChat.vue` 的 `isAdmin` 与三处 `v-if`。
 
-**接口统计**：共 **11 个 Controller，78 个 HTTP 端点**：
+**接口统计**：共 **10 个 Controller，78 个 HTTP 端点**：
 
 | Controller | 端点数 |
 |-----------|-------|
@@ -1031,7 +1035,7 @@ npm run build     # 生产构建（输出 dist/，assets 在 static/）
 | 点击星火特效 | `spawnSpark()` 用 Web Animations API 在点击处绽放金色星点，尊重 `prefers-reduced-motion` |
 | 全局样式 | `#app [style*="background:#fff"]` 等选择器统一改造成**磨砂玻璃卡片**（半透明白 + `backdrop-filter`），并对不支持 `backdrop-filter` 的浏览器做降级 |
 
-### 7.3 路由表（`src/router/index.js`，总共 18 条）
+### 7.3 路由表（`src/router/index.js`，总共 22 条）
 
 模式 `history`，**未配置任何路由守卫**（登录态由 `App.vue` 与拦截器信封处理）。
 
@@ -1108,7 +1112,7 @@ axios.defaults.timeout = 15000;   // 15 秒
 ⑥ 其它                           → throw response.data
 ```
 
-### 7.6 API 服务层全清单（`src/service/`，11 个文件 / 81 个导出函数）
+### 7.6 API 服务层全清单（`src/service/`，11 个文件 / 77 个导出函数）
 
 | 服务文件 | 函数数 |
 |---------|-------|
@@ -1159,9 +1163,9 @@ axios.defaults.timeout = 15000;   // 15 秒
 | `resourceService.js` | `getResourceList`、`getCategorys`、`uploadResourceLogo`→`POST`、`resourceCreate`→`POST /create`、`resourceUpdate`→`POST /update`、`resourceDelete`→`POST /delete/{id}`（`/api/bbs/resource/`） |
 | `userService.js` | 27 个函数，覆盖 `/api/bbs/user/` 全部端点（权限探测、管理员列表、点赞/关注切换、作者信息、头像上传、资料更新、验证码、绑定/解绑邮箱手机、改密、查重、重置密码、操作统计） |
 
-### 7.7 组件清单（`src/components/`，73 个 `.vue` 文件）
+### 7.7 组件清单（`src/components/`，72 个 `.vue` 文件；连同 `src/App.vue` 共 73 个）
 
-#### `index/` —— 页面级组件（17 个）
+#### `index/` —— 页面级组件（19 个）
 
 | 文件 | 行数 | 说明 |
 |------|------|------|
@@ -1235,14 +1239,14 @@ i18n/
 
 | 目录 | 内容 |
 |------|------|
-| `css/` | 全局样式（3 个 `.css` + 1 个 `.less`） |
+| `css/` | 全局样式（`main.css` + `main.less`） |
 | `font/` | `hamburgserial-xbold.ttf` + `font.css` |
-| `icon/` | iconfont 字体与脚本（`iconfont.js/.json/.ttf/.woff/.woff2`）——含管理员标识 `icon-huiyuan` |
+| `icon/` | 两套 iconfont 字体与脚本（`iconfont.*` 与 `iconfont2.*`，各含 `.css/.js/.json/.ttf/.woff/.woff2`）——含管理员标识 `icon-huiyuan` |
 | `img/level/` | **等级徽章系统**：`Lv1.svg`~`Lv6.svg` + `badge-Lv1.svg`~`badge-Lv6.svg`（对应 `UserLevelEnum`） |
 | `img/message/` | 消息中心插图 |
 | `img/chinaPay/` | 捐赠/支付二维码 |
 | `img/contactway/` | 联系方式图标 |
-| `img/` | 其它：`logo-lanse222.png`、`about-nsbbs.png`、`404.svg`、`badge.svg` |
+| `img/` | 其它 10 个：`logo-cairo.png`、`logo-lanse222.png`、`logo002.png`、`about-nsbbs.png`、`cairo-avatar.jpg`、`avatar-bg.png`、`default-avatar.png`、`default_avatar.png`、`404.svg`、`badge.svg` |
 | `json/nav.js` | 导航菜单数据结构 |
 
 `public/backgroundHtml/` 存放全局粒子背景（`bg.html` 及其依赖），
@@ -1577,8 +1581,7 @@ VALUES (1, 'admin',
 
 ### 9.1 定位
 
-`MultimodalRAG` 由原「MultimodalRAG 多模态知识库问答系统」改造而来，
-改造后是**开罗论坛内置的 AI 搜索引擎 Agent「小罗Bot」**：
+`MultimodalRAG` 是**开罗论坛内置的 AI 搜索引擎 Agent「小罗Bot」**：
 多智能体协作 + 多模态 RAG，**先在论坛里找答案，论坛里没有（且用户允许）时再联网找**。
 
 ```
@@ -1683,12 +1686,16 @@ Milvus Lite（嵌入式单进程，数据文件 `milvus_local.db`），三个集
 ```
 MultimodalRAG/
 ├── config.yml                    ★ 唯一配置源（API Key / 端口 / 检索参数 / 开关）
+├── config_example.yml            脱敏配置模板（api_key 全为空）
 ├── requirements.txt
 ├── README.md                     详细使用文档
+├── my_llm.py                     全局大模型实例（对话 / 多模态 / 嵌入 / 智谱客户端）
 ├── start_bot.ps1                 ★ 启动 AI 服务（FastAPI）
 ├── start_kb_sync.ps1             ★ 同步论坛内容到知识库
 ├── start_chat.ps1                启动 Gradio 调试界面
-├── start_knowledge.ps1           启动 PDF 知识库构建界面
+├── start_knowledge.ps1           启动 PDF 知识库构建界面（实为拉起 main.py）
+├── main.py                       文档知识库构建入口（Gradio，受 ocr.enabled 控制）
+├── save_existing.py / check_milvus.py / clear_milvus.py / evaluate_full.py
 │
 ├── agent/                        ★ 多智能体核心（graph/supervisor/forum_agent/
 │   │                               web_agent/vision_agent/composer/evaluator/
@@ -1697,17 +1704,19 @@ MultimodalRAG/
 ├── ingestion/                    ★ 论坛知识接入（forum_source / forum_ingest /
 │   │                               attachment_ingest / cli）
 ├── milvus_db/                    集合定义 + 多模态混合检索器
-├── utils/                        配置、嵌入、日志、图片理解
-├── tools/dev_gateway.py          本地联调网关桩（模拟 bbs-rest）
-├── dots_ocr/                     PDF/图片解析（DotsOCR）
+├── utils/                        配置、嵌入、日志、图片理解、★ OCR 开关（ocr_utils.py）
+├── tools/                        dev_gateway.py 联调网关桩 + download_model.py 权重下载
+├── dots_ocr/                     PDF/图片解析（DotsOCR，受 ocr.enabled 控制）
 ├── splitters/                    Markdown 四层分块器
 ├── evaluate/                     RAGAS 评估器封装
 ├── graph/                        共享 LangGraph 组件
-├── output/                       解析产物（含 attachments/ 上传的附件原文件）
-├── forum_snapshot/               离线数据源目录（放 md/txt/json）
+├── gradio/                       预留目录（当前为空）
+├── weights/DotsOCR               本地 OCR 权重（当前为空，用 tools/download_model.py 拉取）
+├── output/                       解析产物（attachments/ 上传原件、ocr_pages/ OCR 中间产物）
+├── logs/                         运行日志
+├── forum_snapshot/               离线数据源目录（**按需自建**，不存在时该数据源自动跳过）
 ├── milvus_local.db               Milvus Lite 数据文件
-├── logs/                         日志
-└── 项目文档/                      设计与架构文档（含小罗Bot-架构与设计.md 等）
+└── 其它（old）/                   改造前的旧文档与架构图（当前流程已不引用）
 ```
 
 ### 9.7 页面上的知识库管理
@@ -1723,16 +1732,29 @@ MultimodalRAG/
 
 | 格式 | 解析方式 |
 |------|---------|
-| `.pdf` | PyMuPDF 逐页抽正文（不需要 GPU/OCR） |
+| `.pdf` | PyMuPDF 抽文字层；抽不到的页在 `ocr.enabled=true` 时交给 DotsOCR |
 | `.txt` / `.md` | 直接读取 |
 | `.json` | 展开成 `key.path: value` 便于按字段名检索 |
 | `.csv` | 逐行转成「列名: 值」；只取前 `csv_max_rows` 行 |
 | `.docx` | python-docx 抽段落（标题转成 `#`）+ 表格 |
 | `.png/.jpg/.jpeg/.webp/.bmp` | 多模态模型生成描述，图片与描述一起向量化 |
 
-要点：
+**扫描件与 `ocr.enabled` 总开关**：一份 PDF 能不能抽到字，取决于它**有没有文字层**——
+文字型 PDF 直接读文字层，扫描件只有像素、必须靠 OCR。这两件事由
+`config.yml → ocr.enabled` 一个开关统管，它代表**「你有没有把 OCR 配好」**，
+而且是**逐页判断**的（能抽到文字层的页一律用 PyMuPDF，只有抽不到的页才走 OCR）：
 
-- **扫描件 PDF 会明确报错**，不会静默入库（当前环境 DotsOCR 权重不存在、未部署 vLLM）；
+| `ocr.enabled` | 解析引擎 | 扫描件 | 需要准备什么 |
+|---------------|----------|--------|--------------|
+| `false`（默认） | 纯 PyMuPDF | ❌ 明确报错，不静默入库 | 什么都不用配，不占显存 |
+| `true` | PyMuPDF + DotsOCR | ✅ 渲染成图交给 DotsOCR 识别 | 权重放好，或 vLLM 起好 |
+
+两条解析入口 —— 页面「知识库」面板上传、`start_knowledge.ps1` 的 Gradio 界面 —— 都听这个开关；
+开启后的前置条件、排查手段与中间产物目录（`output/ocr_pages/`）见
+`MultimodalRAG/README.md` 的「3.1.3 扫描件与 OCR 总开关」。
+
+其余要点：
+
 - **重复上传同一文件不会重复入库**：主键是内容摘要 `attachment:<sha1前16位>`，重复上传是覆盖；
 - 原文件落在 `output/attachments/`，删除附件时连同它的全部知识块与原文件一起清理。
 
@@ -2000,6 +2022,7 @@ auth:
 | `forum` | 分块 | `chunk_size: 700`，`chunk_overlap: 80`，`max_images_per_article: 3` |
 | `web_search` | 联网搜索 | `enabled_by_default: false`，`provider: zhipu`，`max_results: 8` |
 | `attachment` | 附件上传 | `admin_only: true`，`max_size_mb: 20`，`pdf_max_pages: 200`，`csv_max_rows: 500` |
+| `ocr` | 扫描件 OCR（DotsOCR） | `enabled: false`（★ 总开关，配好权重/vLLM 才改 `true`），`use_hf: true`，`hf_model_path: weights/DotsOCR`，`dpi: 120`，`num_thread: 1` |
 | `agent` | 调度 | `max_handoffs: 9`，`max_web_queries: 2`，`max_forum_queries: 3` |
 | `agent` | 判定阈值 | `forum_relevance_threshold: 0.70`，`answer_score_threshold: 0.55` |
 | `agent` | 其他 | `enable_evaluator: true`，`history_window: 8`，`memory_top_k: 3`，`max_answer_tokens: 2048` |
@@ -2074,7 +2097,7 @@ auth:
 | **一轮问答 10~20 秒** | 含规划 + 检索 + 判定 + 生成 + 评估，属正常范围。触发联网时更久 |
 | 想更快 | `config.yml → agent.enable_evaluator: false` 可省一次 LLM 调用（快 2~3 秒） |
 | 联网是兜底通道 | 只有论坛检索判定为「不足」时才会真正触发；开关打开≠一定联网 |
-| 扫描件 PDF | 当前环境无 OCR，会明确报错而非静默入库 |
+| 扫描件 PDF | 由 `config.yml → ocr.enabled` 决定：`false`（默认）时纯 PyMuPDF，抽不到字会明确报错而非静默入库；`true` 时走 DotsOCR，需权重/vLLM 已就绪 |
 | 知识库为空 | 页面「一问就答不上来」时先确认知识库条目数，其次确认问题与文档用词是否过于不同 |
 
 ---
@@ -2204,11 +2227,14 @@ curl -H "X-Dev-Role: admin" http://127.0.0.1:7010/api/bbs/ai/kb/status
 **根目录**
 
 ```
-Cairo Forum/
+Cairo-Forum/
 ├── springboot/        Java 后端（Maven 多模块，182 个 Java 文件）
 ├── vue-ui/            Vue 2 前端（73 个 .vue + 24 个 .js）
 ├── MultimodalRAG/     Python AI 服务
-└── Cairo Forum 项目文档.md    ← 本文档
+├── README.md          ← 本文档
+├── LICENSE            MIT
+├── .gitignore
+└── 展示图1~7.jpeg      README 顶部的效果图
 ```
 
 **项目自带文档**
@@ -2219,10 +2245,10 @@ Cairo Forum/
 | `springboot/配置清单.md` | 自托管部署配置清单（基础设施、必改配置、建库、默认账号） |
 | `springboot/微服务架构与拆分说明.md` | 微服务划分原理与跨主机拆分指南 |
 | `vue-ui/项目说明.txt` | 图片/文字/其它信息的存储策略 |
-| `MultimodalRAG/README.md` | AI 服务完整使用文档（528 行） |
-| `MultimodalRAG/项目文档/小罗Bot-架构与设计.md` | AI 服务设计决策与踩坑记录 |
-| `MultimodalRAG/项目文档/面试项目文档.md` | 项目讲解材料 |
-| `MultimodalRAG/项目文档/{graph_rag.png, 存储流程图.png}` | 架构图 |
+| `MultimodalRAG/README.md` | AI 服务完整使用文档（606 行） |
+| `MultimodalRAG/其它（old）/小罗Bot-架构与设计.md` | AI 服务设计决策与踩坑记录 |
+| `MultimodalRAG/其它（old）/面试项目文档.md` | 项目讲解材料 |
+| `MultimodalRAG/其它（old）/{graph_rag.png, 存储流程图.png}` | 架构图 |
 
 ### B. 端口分配一览
 

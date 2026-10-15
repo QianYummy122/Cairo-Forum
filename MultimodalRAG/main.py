@@ -1,8 +1,16 @@
 """知识库构建 Gradio 界面入口（小罗Bot 的"文档知识"来源之一）。
 
 运行：python main.py
-流程：上传 PDF → DotsOCR 解析为 Markdown → 四层分块 → 多模态向量化
+流程：上传 PDF → 解析为 Markdown → 四层分块 → 多模态向量化
       → 写入小罗Bot 的统一知识库 t_knowledge_collection。
+
+用哪条解析引擎由 ``config.yml → ocr.enabled`` 决定：
+
+- ``true``  —— DotsOCR 解析（能读扫描件，需要权重/vLLM 已就绪）；
+- ``false`` —— 纯 PyMuPDF，只读 PDF 自带的文字层，扫描件会被明确拒绝。
+
+两条引擎产出的 Markdown 目录结构完全一样（``<文件名>_page_N.md``），
+所以后面的入库链路与页面「知识库」面板共用，无需任何改动。
 
 注意：论坛内容的知识库不走这里，而是走 ``python -m ingestion.cli sync``
 （通过 springboot 网关拉取文章/评论/资源/标签）。两者最终落在同一个集合里，
@@ -18,6 +26,7 @@ from ingestion.forum_ingest import sync_pdf_markdown
 from utils.common_utils import delete_directory_if_nonempty, get_filename, get_sorted_md_files
 from utils.config import CONFIG
 from utils.log_utils import log
+from utils.ocr_utils import ocr_enabled, ocr_status, pymupdf_pdf_to_markdown_dir
 
 # Markdown 解析产物根目录（来自 config.yml -> paths.output_dir）
 BASE_MD_DIR = str(CONFIG.path("paths.output_dir"))
@@ -45,34 +54,68 @@ class ProcessorAPP:
             gr.Button(interactive=False),
         ]
 
+    def _fail(self, message):
+        """解析失败时的统一返回（控件状态与原实现保持一致）。"""
+        return [
+            message,  # status
+            gr.Dropdown(interactive=False),  # file_dropdown
+            gr.Button(interactive=True),  # parse_btn
+            gr.update(interactive=False),  # save_btn
+        ]
+
     def parse_pdf(self):
-        """解析 PDF 文件，生成多个 Markdown 文件。"""
+        """解析上传的 PDF/图片，生成多个 Markdown 文件。
+
+        引擎由 ``config.yml → ocr.enabled`` 决定：
+        true 走 DotsOCR（能读扫描件），false 走纯 PyMuPDF（只读文字层）。
+        """
         if not self.pdf_path:
-            return [
-                "请先上传文件！",  # status
-                gr.Dropdown(interactive=False),  # file_dropdown
-                gr.Button(interactive=True),  # parse_btn
-                gr.update(interactive=False),  # save_btn
-            ]
+            return self._fail("请先上传文件！")
 
         md_files_dir = os.path.join(BASE_MD_DIR, get_filename(self.pdf_path, False))
         delete_directory_if_nonempty(md_files_dir)
 
-        # OCR 解析参数全部来自 config.yml -> ocr
-        do_parse(
-            input_path=self.pdf_path,
-            output=BASE_MD_DIR,
-            num_thread=CONFIG.get("ocr.num_thread", 1),
-            no_fitz_preprocess=CONFIG.get("ocr.no_fitz_preprocess", True),
-            use_hf=CONFIG.get("ocr.use_hf", True),
-            dpi=CONFIG.get("ocr.dpi", 120),
-            max_pixels=CONFIG.get("ocr.max_pixels"),
-        )
+        ext = os.path.splitext(self.pdf_path)[1].lower()
+        engine = "DotsOCR"
+
+        if ocr_enabled():
+            # OCR 解析参数全部来自 config.yml -> ocr
+            try:
+                do_parse(
+                    input_path=self.pdf_path,
+                    output=BASE_MD_DIR,
+                    num_thread=CONFIG.get("ocr.num_thread", 1),
+                    no_fitz_preprocess=CONFIG.get("ocr.no_fitz_preprocess", True),
+                    use_hf=CONFIG.get("ocr.use_hf", True),
+                    dpi=CONFIG.get("ocr.dpi", 120),
+                    max_pixels=CONFIG.get("ocr.max_pixels"),
+                )
+            except Exception as e:  # noqa: BLE001  配错（权重缺失/服务没起）时给明确提示
+                log.exception(f"[main] DotsOCR 解析失败：{e}")
+                return self._fail(f"OCR 已启用（ocr.enabled=true）但解析失败：{e}")
+        elif ext == ".pdf":
+            # 纯 PyMuPDF：产物与 DotsOCR 同构（<文件名>_page_N.md），入库链路完全一致
+            report = pymupdf_pdf_to_markdown_dir(
+                self.pdf_path,
+                md_files_dir,
+                stem=get_filename(self.pdf_path, False),
+                max_pages=CONFIG.get("attachment.pdf_max_pages", 200),
+            )
+            engine = "PyMuPDF"
+            if not report.get("ok"):
+                return self._fail(f"解析失败：{report.get('error')}")
+        else:
+            return self._fail(
+                f"OCR 未启用（config.yml → ocr.enabled=false），纯 PyMuPDF 只能处理 PDF，"
+                f"读不了 {ext} 这类图片文件。两个办法："
+                f"① 配好 DotsOCR 权重后把 ocr.enabled 改成 true；"
+                f"② 直接在页面「知识库」面板上传这张图片（图片走多模态描述，不需要 OCR）。"
+            )
 
         if os.path.isdir(md_files_dir):
             self.md_dir = md_files_dir
             self.md_files = get_sorted_md_files(self.md_dir)
-            log.info(f"PDF已解析，生成了{len(self.md_files)}个md文件")
+            log.info(f"PDF已解析（{engine}），生成了{len(self.md_files)}个md文件")
 
             # 读取所有 md 文件内容以便展示
             for f in self.md_files:
@@ -85,18 +128,13 @@ class ProcessorAPP:
 
             file_names = [os.path.basename(f) for f in self.md_files]
             return [
-                f"解析完成，共 {len(self.md_files)} 个MD文件",  # status
+                f"解析完成（引擎：{engine}），共 {len(self.md_files)} 个MD文件",  # status
                 gr.Dropdown(choices=file_names, label="MD文件列表", interactive=True),  # file_dropdown
                 gr.Button(interactive=False),  # parse_btn
                 gr.update(interactive=True),  # save_btn
             ]
 
-        return [
-            "解析失败！",  # status
-            gr.Dropdown(interactive=False),  # file_dropdown
-            gr.Button(interactive=True),  # parse_btn
-            gr.update(interactive=False),  # save_btn
-        ]
+        return self._fail(f"解析失败！{engine} 没有生成任何 Markdown 文件")
 
     def select_md_file(self, selected_file):
         """选择一个 md 文件并展示其内容。"""
@@ -125,11 +163,21 @@ class ProcessorAPP:
 
     def create_interface(self):
         """创建一个构建多模态知识库的界面。"""
+        ocr = ocr_status()
+        if ocr["enabled"]:
+            engine_note = (f"当前解析引擎：**DotsOCR**（`ocr.enabled=true`，"
+                           f"{ocr['engine']} 模式）—— 能读扫描件。")
+        else:
+            engine_note = ("当前解析引擎：**纯 PyMuPDF**（`ocr.enabled=false`）—— "
+                           "只读 PDF 自带的文字层，**扫描件会被拒绝**；"
+                           "图片文件请改用页面「知识库」面板上传。")
+
         with gr.Blocks() as app:
             gr.Markdown(f"## {CONFIG.get('app.bot_name', '小罗Bot')} · 文档知识库构建")
             gr.Markdown(
                 "上传 PDF/图片 → 解析为 Markdown → 四层分块 → 多模态向量化，"
                 "写入统一知识库 `t_knowledge_collection`。\n\n"
+                f"> {engine_note}\n>\n"
                 "> 论坛内容的知识库请用 `python -m ingestion.cli sync`（走 springboot 网关同步）。"
             )
 

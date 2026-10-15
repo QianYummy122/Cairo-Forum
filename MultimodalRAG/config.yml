@@ -56,7 +56,15 @@ llm:
     max_image_bytes: 3145728    # 单张图片体积上限（3 MB），超出则跳过
 
 # ------------------------------ 文档解析 (DotsOCR) ---------------------------
+# ★ enabled 是 OCR 总开关，代表"你有没有把 OCR 配好"：
+#   true  = 权重已放好（use_hf=true）或 vLLM 已启动（use_hf=false）。
+#           PDF 里**没有文字层的页**（扫描页/图片型页）会渲染成图交给 DotsOCR 识别。
+#   false = 纯 PyMuPDF 处理：只读 PDF 自带的文字层，不加载任何模型、不占显存。
+#           扫描件抽不到字会明确报错，不会静默入库。
+# 注意是**逐页判断**：能抽到文字层的页一律走 PyMuPDF（原文照搬、最快），
+# 只有抽不到文字的页才走 OCR —— 所以开不开 OCR 都不影响文字型 PDF。
 ocr:
+  enabled: false                # ★ true=OCR 已配好并启用；false=纯 PyMuPDF
   ip: "localhost"               # vLLM / 推理服务地址
   port: 6006                    # vLLM 服务端口
   api_key: "0"                  # vLLM OpenAI 兼容接口的 Key（本地部署通常为占位值）
