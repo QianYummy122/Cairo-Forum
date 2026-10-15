@@ -7,7 +7,7 @@ from utils.config import CONFIG
 
 _OCR = CONFIG.section("ocr")
 
-
+#原本我们在本地搭载了vLLM Server（参数啥的都在那边），只不过目前不需要用了（改为用Huggingface 进行本地推理，不使用C/S，记得往项目加Weights文件夹）
 def inference_with_vllm(
         image,
         prompt,
