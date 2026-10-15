@@ -30,6 +30,10 @@
 
 **开罗论坛（Cairo Forum）** 是一个功能完整的现代化技术社区论坛系统，包含**文章发布与审核、评论（多级回复）、点赞、关注、用户等级成长体系、标签管理、资源导航、轮播图、消息通知、站内动态**等完整社交能力，并在其上集成了一个**多智能体 + 多模态 RAG 的 AI 搜索引擎助手「小罗Bot」**。
 
+![alt text](展示图1.jpeg)
+![alt text](展示图7.jpeg) ![alt text](展示图6.jpeg)  ![alt text](展示图4.jpeg) ![alt text](展示图3.jpeg) ![alt text](展示图2.jpeg)![alt text](展示图5.jpeg)
+
+
 项目采用 **前后端分离 + Dubbo RPC 微服务** 架构：
 
 - **后端**：Spring Boot 3.5 + Apache Dubbo 3.3 + ZooKeeper，Maven 多模块，拆分为 4 个可独立部署进程；
