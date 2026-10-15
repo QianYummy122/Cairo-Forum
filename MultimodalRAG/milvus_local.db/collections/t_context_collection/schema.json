@@ -1,0 +1,114 @@
+{
+  "collection_name": "t_context_collection",
+  "enable_dynamic_field": false,
+  "fields": [
+    {
+      "auto_id": true,
+      "default_value": null,
+      "dim": null,
+      "dtype": "int64",
+      "element_type": null,
+      "is_primary": true,
+      "max_capacity": null,
+      "max_length": null,
+      "name": "id",
+      "nullable": false
+    },
+    {
+      "analyzer_params": {
+        "filter": [
+          "cnalphanumonly"
+        ],
+        "tokenizer": "jieba"
+      },
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "varchar",
+      "element_type": null,
+      "enable_analyzer": true,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": 6000,
+      "name": "context_text",
+      "nullable": false
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "varchar",
+      "element_type": null,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": 1000,
+      "name": "user",
+      "nullable": true
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "int64",
+      "element_type": null,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": null,
+      "name": "timestamp",
+      "nullable": true
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "varchar",
+      "element_type": null,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": 100,
+      "name": "message_type",
+      "nullable": true
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "sparse_float_vector",
+      "element_type": null,
+      "is_function_output": true,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": null,
+      "name": "context_sparse",
+      "nullable": false
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": 1024,
+      "dtype": "float_vector",
+      "element_type": null,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": null,
+      "name": "context_dense",
+      "nullable": false
+    }
+  ],
+  "functions": [
+    {
+      "function_type": 1,
+      "input_field_names": [
+        "context_text"
+      ],
+      "name": "text_bm25_emb",
+      "output_field_names": [
+        "context_sparse"
+      ],
+      "params": {}
+    }
+  ],
+  "properties": {},
+  "schema_format_version": 2,
+  "version": 1
+}

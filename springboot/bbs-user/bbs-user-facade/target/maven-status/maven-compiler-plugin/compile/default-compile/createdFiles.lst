@@ -1,0 +1,16 @@
+com\liang\bbs\user\facade\dto\FollowSearchDTO.class
+com\liang\bbs\user\facade\dto\FollowDTO.class
+com\liang\bbs\user\facade\dto\LikeSearchDTO.class
+com\liang\bbs\user\facade\server\FollowService.class
+com\liang\bbs\user\facade\dto\DynamicDTO.class
+com\liang\bbs\user\facade\server\UserLevelService.class
+com\liang\bbs\user\facade\dto\UserForumDTO.class
+com\liang\bbs\user\facade\dto\UserOperateCountDTO.class
+com\liang\bbs\user\facade\server\LikeCommentService.class
+com\liang\bbs\user\facade\dto\LikeDTO.class
+com\liang\bbs\user\facade\dto\LikeCommentDTO.class
+com\liang\bbs\user\facade\server\DynamicService.class
+com\liang\bbs\user\facade\dto\FollowCountDTO.class
+com\liang\bbs\user\facade\dto\UserSearchDTO.class
+com\liang\bbs\user\facade\dto\UserLevelDTO.class
+com\liang\bbs\user\facade\server\LikeService.class

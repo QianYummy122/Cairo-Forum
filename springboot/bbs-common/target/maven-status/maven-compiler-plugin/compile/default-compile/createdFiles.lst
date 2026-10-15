@@ -1,0 +1,9 @@
+com\liang\bbs\common\constant\RedisConstants.class
+com\liang\bbs\common\enums\SortRuleEnum.class
+com\liang\bbs\common\enums\UserLevelEnum.class
+com\liang\bbs\common\util\Placeholder.class
+com\liang\bbs\common\enums\ArticleStateEnum.class
+com\liang\bbs\common\enums\DynamicTypeEnum.class
+com\liang\bbs\common\config\RestTemplateConfig.class
+com\liang\bbs\common\facade\server\UserAdminService.class
+com\liang\bbs\common\enums\EnumIntegerTransform.class

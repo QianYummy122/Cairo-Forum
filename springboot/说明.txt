@@ -1,0 +1,5 @@
+本项目用Zookeeper做注册中心，Dubbo做微服务与RPC，Springboot后端用于做点鉴权与Dubbo微服务请求对接
+
+Redis做验证码缓存、用户登入状态缓存等
+
+访客数不是累加计数器，而是靠VisitInterceptor在每个请求上记录、VisitServiceImpl按「同一 IP 30分钟内只记一次」去重后插入 ns_visit表，最终 COUNT(*)出来的行数即近似「访客数」——它是时间片去重的独立访客口径，不是PV，也不是严格按自然日去重的 UV。

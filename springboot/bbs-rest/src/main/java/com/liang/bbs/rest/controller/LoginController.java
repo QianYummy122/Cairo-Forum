@@ -1,0 +1,123 @@
+package com.liang.bbs.rest.controller;
+
+import com.liang.bbs.rest.config.login.NoNeedLogin;
+import com.liang.bbs.rest.config.swagger.ApiVersion;
+import com.liang.bbs.rest.config.swagger.ApiVersionConstant;
+import com.liang.bbs.rest.utils.HostUtils;
+import com.liang.bbs.rest.utils.HttpRequestUtils;
+import com.liang.bbs.user.facade.server.UserLevelService;
+import com.liang.manage.auth.facade.dto.user.UserDTO;
+import com.liang.manage.auth.facade.dto.user.UserLoginDTO;
+import com.liang.manage.auth.facade.dto.user.UserTokenDTO;
+import com.liang.manage.auth.facade.server.UserService;
+import com.liang.nansheng.common.constant.AuthSystemConstants;
+import com.liang.nansheng.common.constant.TimeoutConstants;
+import com.liang.nansheng.common.enums.ResponseCode;
+import com.liang.nansheng.common.web.basic.ResponseResult;
+import com.liang.nansheng.common.web.exception.BusinessException;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseCookie;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * @author Qianyummy112
+ * @date 2021/4/25 15:16
+ */
+@Slf4j
+@RestController
+@RequestMapping("/bbs/sso/")
+@Tag(name = "用户统一登录接口")
+@CrossOrigin(origins = "*")
+public class LoginController {
+    @DubboReference
+    private UserService userService;
+
+    @DubboReference
+    private UserLevelService userLevelService;
+
+    @NoNeedLogin
+    @PostMapping("register")
+    @Operation(summary = "用户注册")
+    @ApiVersion(group = ApiVersionConstant.V_300)
+    public ResponseResult<UserTokenDTO> register(@RequestBody UserDTO userDTO, HttpServletRequest request, HttpServletResponse response) {
+        UserTokenDTO userTokenDTO = userService.register(userDTO);
+        // 增加cookie
+        addCookie(userTokenDTO.getToken(), request, response);
+        // 创建用户等级信息
+        userLevelService.create(userTokenDTO.getUserId());
+        return ResponseResult.success(userTokenDTO);
+    }
+
+    @NoNeedLogin
+    @PostMapping("login")
+    @Operation(summary = "用户登录")
+    @ApiVersion(group = ApiVersionConstant.V_300)
+    public ResponseResult<UserTokenDTO> login(@RequestBody UserLoginDTO userLoginDTO, HttpServletRequest request, HttpServletResponse response) {
+        UserTokenDTO userTokenDTO = userService.login(userLoginDTO);
+        // 增加cookie
+        addCookie(userTokenDTO.getToken(), request, response);
+        return ResponseResult.success(userTokenDTO);
+    }
+
+    @NoNeedLogin
+    @GetMapping("logout")
+    @Operation(summary = "用户登出")
+    @ApiVersion(group = ApiVersionConstant.V_300)
+    public ResponseResult<Boolean> logout(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            // 获取cookie中的信息
+            Cookie ssoAccount = HttpRequestUtils.findCookie(request, AuthSystemConstants.NS_ACCOUNT_SSO_COOKIE);
+            if (ssoAccount != null) {
+                userService.logout(ssoAccount.getValue());
+            }
+            // 删除cookie
+            clearCookie(request, response);
+        } catch (Exception e) {
+            throw BusinessException.build(ResponseCode.OPERATE_FAIL, "退出登录失败!");
+        }
+
+        return ResponseResult.success(true);
+    }
+
+    /**
+     * 增加cookie
+     *
+     * @param token
+     * @param request
+     * @param response
+     */
+    private void addCookie(String token, HttpServletRequest request, HttpServletResponse response) {
+        // 设置Cookie, 业务方可自行设置Cookie的name值
+        ResponseCookie cookie = ResponseCookie.from(AuthSystemConstants.NS_ACCOUNT_SSO_COOKIE, token)
+                .maxAge(TimeoutConstants.NS_SSO_TIMEOUT)
+                .domain(HostUtils.getPureHost(request))
+                .path("/")
+                .httpOnly(true)
+                .build();
+        response.addHeader("Set-Cookie", cookie.toString());
+    }
+
+    /**
+     * 删除cookie
+     *
+     * @param response
+     */
+    private void clearCookie(HttpServletRequest request, HttpServletResponse response) {
+        // 设置Cookie, 业务方可自行设置Cookie的name值
+        ResponseCookie cookie = ResponseCookie.from(AuthSystemConstants.NS_ACCOUNT_SSO_COOKIE, "")
+                .maxAge(0)
+                .domain(HostUtils.getPureHost(request))
+                .path("/")
+                .httpOnly(true)
+                .build();
+        response.addHeader("Set-Cookie", cookie.toString());
+    }
+
+}

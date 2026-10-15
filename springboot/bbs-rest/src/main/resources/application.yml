@@ -1,0 +1,85 @@
+server:
+  port: 7010
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: ns-bbs-rest
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 1000MB
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password:
+      # 单位 毫秒
+      timeout: 60000
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 10
+          min-idle: 1
+
+dubbo:
+  application:
+    name: ns-bbs-rest
+    # 关闭序列化安全检查（可选值：STRICT / WARN / DISABLE）
+    serialize-check-status: DISABLE
+    # 强制使用接口级注册，禁用应用级服务发现
+    register-mode: interface
+    parameters:
+      # 强制接口级，跳过服务发现
+      migration.step: FORCE_INTERFACE
+  registry:
+    address: zookeeper://127.0.0.1:2181
+    timeout: 60000
+  protocol:
+    name: dubbo
+    port: 22001
+  consumer:
+    check: false
+    timeout: 60000
+  config-center:
+    timeout: 60000
+  provider:
+    # 配了这个就可以抛出自定义异常（否则一直是RuntimeException）
+    filter: -exception
+
+# 自定义
+interceptor:
+  monitor:
+    #是否启用监控
+    status: true
+
+# 小罗Bot（AI 搜索引擎 Agent）
+# 前端页面 /bot 通过 /api/bbs/ai/** 调用本网关，本网关再反向代理到 AI 服务。
+# AI 服务由 MultimodalRAG 项目改造而来（多智能体 + 多模态 RAG + 可选联网搜索），
+# 只监听内网，不直接对浏览器暴露；启动方式见 MultimodalRAG/start_bot.ps1。
+ai:
+  agent:
+    # 关闭后所有 /bbs/ai/** 接口返回"功能未启用"
+    enabled: true
+    # AI 服务地址（MultimodalRAG 的 FastAPI 服务）
+    base-url: http://127.0.0.1:7861
+    # 建立连接超时（毫秒）
+    connect-timeout: 5000
+    # 读取超时（毫秒）：Agent 一轮包含规划 + 检索 + 联网 + 生成，给足 3 分钟
+    read-timeout: 180000
+    # 知识库全量同步的超时（毫秒）
+    sync-timeout: 1800000
+    # 文档附件上传：网关这一层的 multipart 大小上限（字节）。
+    # 真正的类型/大小校验在 AI 服务的 config.yml -> attachment，这里只是兜住 Servlet 层，
+    # 避免超大请求先被打进内存。默认 20MB，与 attachment.max_size_mb 保持一致。
+    upload-max-bytes: 20971520
+
+# swagger打开
+swagger:
+  show: true
+
+file:
+  source:
+    # 设定上传源文件允许的最大值（1024*1024*5=5M）
+    length: 5242880

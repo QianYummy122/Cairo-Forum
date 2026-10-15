@@ -1,0 +1,44 @@
+{
+  "id": "5230697",
+  "name": "no name",
+  "font_family": "iconfont",
+  "css_prefix_text": "icon-",
+  "description": "",
+  "glyphs": [
+    {
+      "icon_id": "1002155",
+      "name": "微信",
+      "font_class": "weixin",
+      "unicode": "e6b3",
+      "unicode_decimal": 59059
+    },
+    {
+      "icon_id": "4937004",
+      "name": "QQ-circle-fill",
+      "font_class": "QQ-circle-fill",
+      "unicode": "e887",
+      "unicode_decimal": 59527
+    },
+    {
+      "icon_id": "10583159",
+      "name": "会员",
+      "font_class": "huiyuan",
+      "unicode": "e683",
+      "unicode_decimal": 59011
+    },
+    {
+      "icon_id": "19212900",
+      "name": "收起",
+      "font_class": "shouqi",
+      "unicode": "e652",
+      "unicode_decimal": 58962
+    },
+    {
+      "icon_id": "20602039",
+      "name": "操作-折叠",
+      "font_class": "caozuo-zhedie",
+      "unicode": "e6fb",
+      "unicode_decimal": 59131
+    }
+  ]
+}
