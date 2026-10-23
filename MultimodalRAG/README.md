@@ -373,12 +373,16 @@ MultimodalRAG/
 │
 ├── agent/                        ★ 多智能体核心
 │   ├── graph.py                    多智能体图装配（Supervisor 模式 + prepare 清场）
-│   ├── supervisor.py               调度智能体：LLM 规划 + 自适应路由 + 重写预算
-│   ├── forum_agent.py              论坛检索智能体：多模态 RAG + 相关性判定
-│   ├── web_agent.py                联网搜索智能体：可开关的外部信息通道
-│   ├── vision_agent.py             多模态理解智能体：图片 → 可检索信息
-│   ├── composer.py                 答案合成智能体：流式产出带引用的回答
-│   ├── evaluator.py                质量评估智能体：规则 + 模型双层把关
+│   ├── routing.py                  条件边：路由 + 联网/重写预算判定（不调 LLM）
+│   ├── nodes/                      ★ 图上的 8 个节点，一节点一个文件
+│   │   ├── prepare.py                每轮开头清空单轮状态
+│   │   ├── supervisor.py             调度智能体：LLM 规划（产出执行计划）
+│   │   ├── vision.py                 多模态理解智能体：图片 → 可检索信息
+│   │   ├── forum.py                  论坛检索智能体：多模态 RAG + 相关性判定
+│   │   ├── web.py                    联网搜索智能体：可开关的外部信息通道
+│   │   ├── compose.py                答案合成智能体：流式产出带引用的回答
+│   │   ├── evaluate.py               质量评估智能体：规则 + 模型双层把关
+│   │   └── rewrite.py                补救准备：补联网 / 重写，把步骤置回待执行
 │   ├── session.py                  运行时：会话管理 + 事件流（SSE）
 │   ├── state.py                    共享状态（智能体之间的通信总线）
 │   ├── events.py                   事件协议 + SSE 编码

@@ -1,4 +1,4 @@
-"""质量评估智能体：回答发出前的最后一道闸门。
+﻿"""质量评估智能体：回答发出前的最后一道闸门。
 
 两层评估，兼顾"准"和"稳"：
 1. **规则层**（零成本）：来源是否标注、是否出现"材料/上下文"这类内部词汇、
@@ -118,7 +118,7 @@ def _model_check(state: BotState, answer: str) -> Dict[str, Any]:
     return {"score": 0.0, "reason": "", "need_web": False, "source": "none"}
 
 
-def evaluator_node(state: BotState) -> Dict[str, Any]:
+def evaluate_node(state: BotState) -> Dict[str, Any]:
     """质量评估智能体节点。"""
     answer = state.get("answer") or state.get("draft_answer") or ""
     threshold = CONFIG.get("agent.answer_score_threshold", 0.55)
@@ -169,4 +169,4 @@ def evaluator_node(state: BotState) -> Dict[str, Any]:
     return update
 
 
-__all__ = ["evaluator_node"]
+__all__ = ["evaluate_node"]

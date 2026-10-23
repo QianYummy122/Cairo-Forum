@@ -21,15 +21,30 @@ from utils.config import CONFIG
 from utils.log_utils import log
 
 
-def _rewrite_queries(question: str, vision_note: str = "") -> List[str]:
-    """把问题改写成 1~2 条搜索关键词。"""
+def _rewrite_queries(question: str, vision_note: str = "", used: List[str] = None) -> List[str]:
+    """把问题改写成 1~2 条搜索关键词。
+
+    ``used`` 是本轮已经搜过的词：额度没用完、评估又要求补外部信息时会再进一次本节点，
+    这时候必须换词 —— 用和上一轮相同的查询只会拿回同一批结果，白白吃掉额度。
+
+    返回值**保证非空**：联网预算按"实际执行过的查询条数"扣减
+    （见 :func:`agent.routing._web_available`），若这里返回空列表就会一条查询
+    都不执行、预算永远不减少，重试循环也就停不下来。
+    """
     seed = f"{question}\n{vision_note[:300]}".strip() if vision_note else question
-    planned = ask_json(WEB_QUERY_PROMPT, f"用户问题：{seed}")
+    used_set = {str(q).strip() for q in (used or []) if str(q).strip()}
+    hint = f"用户问题：{seed}"
+    if used_set:
+        hint += "\n已经用过的搜索词（请换一个角度，不要给出相同的词）：" + "、".join(sorted(used_set))
+    planned = ask_json(WEB_QUERY_PROMPT, hint)
     queries: List[str] = []
     if isinstance(planned, list):
         queries = [str(q).strip() for q in planned if str(q).strip()]
+    # 模型可能固执地重复上一个词，这里再兜一层
+    queries = [q for q in queries if q not in used_set]
     if not queries:
         # 兜底：直接用原问题，并去掉论坛限定词（站内信息网上查不到）
+        # 万一这个兜底词也搜过了，也宁可再搜一次：预算必须能扣掉，循环才会收敛。
         fallback = question.replace(FORUM_NAME, "").replace("开罗论坛", "").strip()
         queries = [fallback or question]
     return queries[: CONFIG.get("agent.max_web_queries", 2)]
@@ -79,7 +94,7 @@ def _summarize(question: str, results: List[Dict[str, Any]]) -> str:
     return summary or material
 
 
-def web_agent_node(state: BotState) -> Dict[str, Any]:
+def web_node(state: BotState) -> Dict[str, Any]:
     """联网搜索智能体节点。"""
     question = state.get("question") or ""
     enabled = bool(state.get("web_search_enabled"))
@@ -116,8 +131,12 @@ def web_agent_node(state: BotState) -> Dict[str, Any]:
     agent_start("web", f"论坛内容不足，开始联网搜索（{reason}）" if reason else "开始联网搜索")
 
     # ---------- 1. 改写搜索词 ----------
-    queries = _rewrite_queries(question, state.get("vision_note") or "")
-    # 若论坛检索式里有非中文关键词，允许把它们并入搜索词提升召回
+    # 把已经用掉的词传给改写器，二次进入时才会真的换词而不是重复上一轮
+    queries = _rewrite_queries(
+        question,
+        state.get("vision_note") or "",
+        used=list(state.get("web_queries") or []),
+    )
     log.info(f"[web] 搜索词：{queries}")
 
     # ---------- 2. 搜索 ----------
@@ -176,4 +195,4 @@ def web_agent_node(state: BotState) -> Dict[str, Any]:
     }
 
 
-__all__ = ["web_agent_node"]
+__all__ = ["web_node"]

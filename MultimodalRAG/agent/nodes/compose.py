@@ -1,4 +1,4 @@
-"""答案合成智能体：把所有材料写成一份对用户有用的回答。
+﻿"""答案合成智能体：把所有材料写成一份对用户有用的回答。
 
 它是唯一一个**流式输出**的智能体 —— 生成过程中通过 ``delta`` 事件把增量文本推给前端，
 所以用户在页面上看到的是"打字机"效果，而不是等十几秒后一次性刷出整段答案。
@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.events import agent_done, agent_start, emit, trace_entry
-from agent.forum_agent import context_block_for_llm
+from agent.nodes.forum import context_block_for_llm
 from agent.prompts import (
     COMPOSER_PROMPT, COMPOSER_RETRY_SUFFIX, BOT_NAME, FORUM_NAME,
 )
@@ -128,9 +128,12 @@ def build_materials(state: BotState) -> str:
 
 def _system_prompt(state: BotState) -> str:
     prompt = COMPOSER_PROMPT
-    if state.get("rewrite_count"):
+    # 补联网搜索之后也会重新合成一次答案（此时 rewrite_count 还是 0），
+    # 只要已经有评估意见，就把"上一版为什么不合格"告诉模型
+    retry_reason = (state.get("evaluate_reason") or "").strip()
+    if state.get("rewrite_count") or retry_reason:
         prompt += COMPOSER_RETRY_SUFFIX.format(
-            reason=state.get("evaluate_reason") or "答案不够切题或缺少依据"
+            reason=retry_reason or "答案不够切题或缺少依据"
         )
     if not state.get("web_search_enabled"):
         prompt += ("\n\n# 注意\n用户本轮**没有开启联网搜索**："
@@ -139,7 +142,7 @@ def _system_prompt(state: BotState) -> str:
     return prompt
 
 
-def composer_node(state: BotState) -> Dict[str, Any]:
+def compose_node(state: BotState) -> Dict[str, Any]:
     """答案合成智能体节点（流式）。"""
     question = state.get("question") or ""
     has_image = bool(state.get("image"))
@@ -202,4 +205,4 @@ def composer_node(state: BotState) -> Dict[str, Any]:
     }
 
 
-__all__ = ["composer_node", "build_materials", "sanitize_answer_images", "BOT_NAME"]
+__all__ = ["compose_node", "build_materials", "sanitize_answer_images", "BOT_NAME"]

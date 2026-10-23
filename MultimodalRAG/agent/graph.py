@@ -28,10 +28,14 @@
 - 新版由 **调度智能体动态编排**：先规划、再按上游结论自适应调整
   （论坛不足→联网、评估不过→补搜或重写），每个智能体职责单一、可独立观测。
 
-**关于 prepare 节点**：图带 checkpointer，``messages`` 会按会话累积（多轮对话靠它），
-但 ``plan`` / ``agent_status`` / ``citations`` 这些**单轮字段**如果不清零，
-第二轮会看到"计划里所有步骤都已完成"从而直接结束 —— 表现为用户追问时
-原样返回上一轮的答案。所以每轮都先过 prepare 清场。
+本文件只做**装配**，不含业务逻辑：
+
+- 8 个节点的实现都在 ``agent/nodes/`` 下，一节点一个文件（见该包的说明）；
+- 条件边函数在 :mod:`agent.routing`；
+- ``prepare`` 节点每轮开头清场：图带 checkpointer，``messages`` 会按会话累积
+  （多轮对话靠它），但 ``plan`` / ``agent_status`` / ``citations`` 这些**单轮字段**
+  如果不清零，第二轮会看到"计划里所有步骤都已完成"从而直接结束 ——
+  表现为用户追问时原样返回上一轮的答案。
 """
 from __future__ import annotations
 
@@ -43,20 +47,21 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import uuid
-import time
-from typing import Any, Dict
 
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 
-from agent.composer import composer_node
-from agent.evaluator import evaluator_node
-from agent.forum_agent import forum_agent_node
+from agent.nodes.compose import compose_node
+from agent.nodes.evaluate import evaluate_node
+from agent.nodes.forum import forum_node
+from agent.nodes.prepare import prepare_node
+from agent.nodes.rewrite import rewrite_node
+from agent.nodes.supervisor import supervisor_node
+from agent.nodes.vision import vision_node
+from agent.nodes.web import web_node
+from agent.routing import route_after_agent, route_next
 from agent.state import BotState
-from agent.supervisor import rewrite_node, route_after_agent, route_next, supervisor_node
-from agent.vision_agent import vision_agent_node
-from agent.web_agent import web_agent_node
 from utils.config import CONFIG
 from utils.log_utils import log
 
@@ -65,62 +70,18 @@ _CHECKPOINTER = InMemorySaver()
 _COMPILED = None
 
 
-def prepare_node(state: BotState) -> Dict[str, Any]:
-    """每轮问答的入口节点：把**单轮字段**清零，保留会话级字段。
-
-    列表类字段返回 ``None`` 即表示重置（见 :mod:`agent.state` 的 ``_add_list``）；
-    ``agent_status`` 同理（``_merge_dicts`` 收到 ``None`` 会清空）。
-    ``messages`` 不动，多轮上下文照旧累积。
-    """
-    return {
-        # 调度
-        "plan": None,
-        "agent_status": None,
-        "trace": None,
-        "handoffs": 0,
-        # 多模态
-        "vision_note": "",
-        "image_kb_hits": None,
-        # 论坛检索
-        "forum_queries": None,
-        "forum_hits": None,
-        "forum_relevance": 0.0,
-        "forum_sufficient": False,
-        "forum_reason": "",
-        "memory_hits": None,
-        # 联网
-        "web_queries": None,
-        "web_results": None,
-        "web_used": False,
-        "force_web": False,
-        # 输出
-        "draft_answer": "",
-        "answer": "",
-        "answer_score": 0.0,
-        "evaluate_reason": "",
-        "citations": None,
-        "images": None,
-        "used_web_search": False,
-        "need_rewrite": False,
-        "web_needed_by_evaluator": False,
-        "rewrite_count": 0,
-        "error": None,
-        "started_at": time.time(),
-    }
-
-
 def build_agent_graph(enable_evaluator: bool = True):
     """构建并编译多智能体图。"""
     builder = StateGraph(BotState)
 
-    # ---- 节点（每个节点就是一个智能体）----
+    # ---- 节点：8 个节点，代码在 agent/nodes/ 下一节点一个文件 ----
     builder.add_node("prepare", prepare_node)
     builder.add_node("supervisor", supervisor_node)
-    builder.add_node("vision", vision_agent_node)
-    builder.add_node("forum", forum_agent_node)
-    builder.add_node("web", web_agent_node)
-    builder.add_node("compose", composer_node)
-    builder.add_node("evaluate", evaluator_node)
+    builder.add_node("vision", vision_node)
+    builder.add_node("forum", forum_node)
+    builder.add_node("web", web_node)
+    builder.add_node("compose", compose_node)
+    builder.add_node("evaluate", evaluate_node)
     builder.add_node("rewrite", rewrite_node)
 
     # ---- 入口：先清场，再交给调度智能体 ----
@@ -186,7 +147,7 @@ def draw_graph(path: str = None) -> str:
     return path
 
 
-__all__ = ["build_agent_graph", "get_agent_graph", "build_session", "draw_graph", "prepare_node"]
+__all__ = ["build_agent_graph", "get_agent_graph", "build_session", "draw_graph"]
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""论坛检索智能体：小罗Bot 的多模态 RAG 主力。
+﻿"""论坛检索智能体：小罗Bot 的多模态 RAG 主力。
 
 职责
 ----
@@ -105,7 +105,7 @@ def _judge(question: str, hits: List[Dict[str, Any]], relevance: float) -> Dict[
     }
 
 
-def forum_agent_node(state: BotState) -> Dict[str, Any]:
+def forum_node(state: BotState) -> Dict[str, Any]:
     """论坛检索智能体节点。"""
     question = state.get("question") or ""
     image = state.get("image")
@@ -214,7 +214,7 @@ def forum_agent_node(state: BotState) -> Dict[str, Any]:
     }
 
 
-__all__ = ["forum_agent_node", "public_image_url", "context_block_for_llm"]
+__all__ = ["forum_node", "public_image_url", "context_block_for_llm"]
 
 # 给答案合成智能体用的材料拼装（避免在 composer 里重复实现）
 context_block_for_llm = _context_block

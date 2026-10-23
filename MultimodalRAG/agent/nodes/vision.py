@@ -1,4 +1,4 @@
-"""多模态理解智能体：先把用户上传的图片"读懂"，再交给下游智能体。
+﻿"""多模态理解智能体：先把用户上传的图片"读懂"，再交给下游智能体。
 
 只有用户上传了图片才会执行；产出的 ``vision_note`` 会被
 论坛检索智能体（并进检索式）和答案合成智能体（写进回答）共同使用。
@@ -14,7 +14,7 @@ from agent.state import BotState
 from utils.log_utils import log
 
 
-def vision_agent_node(state: BotState) -> Dict[str, Any]:
+def vision_node(state: BotState) -> Dict[str, Any]:
     """多模态理解智能体节点。"""
     image = state.get("image")
     question = state.get("question") or ""
@@ -44,4 +44,4 @@ def vision_agent_node(state: BotState) -> Dict[str, Any]:
     }
 
 
-__all__ = ["vision_agent_node"]
+__all__ = ["vision_node"]

@@ -11,7 +11,7 @@
   这是多轮对话"记得上一句"的来源；
 - **单轮级**（``plan`` / ``agent_status`` / ``*_hits`` / ``trace`` / ``citations`` …）：
   每轮开始必须清零，否则上一轮的"计划已执行完"会让新一轮直接跳过所有智能体。
-  清零由 :func:`agent.graph.prepare_node` 完成，依赖下面支持 ``None`` 语义的 reducer。
+  清零由 :func:`agent.nodes.prepare.prepare_node` 完成，依赖下面支持 ``None`` 语义的 reducer。
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from langgraph.graph import MessagesState
 def _merge_dicts(left: Dict, right: Dict) -> Dict:
     """并行分支同时写同一个 dict 字段时的合并策略。
 
-    ``right is None`` 表示"重置"（由 :func:`agent.graph.prepare_node` 在每轮开始时发出），
+    ``right is None`` 表示"重置"（由 :func:`agent.nodes.prepare.prepare_node` 在每轮开始时发出），
     用于把上一轮遗留的调度状态清干净。
     """
     if right is None:
